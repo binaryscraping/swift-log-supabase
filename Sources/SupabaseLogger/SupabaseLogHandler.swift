@@ -1,3 +1,4 @@
+import Foundation
 import Logging
 
 public struct SupabaseLogHandler: LogHandler {
@@ -9,6 +10,12 @@ public struct SupabaseLogHandler: LogHandler {
   public subscript(metadataKey key: String) -> Logger.Metadata.Value? {
     get { metadata[key] }
     set { metadata[key] = newValue }
+  }
+
+  private let logManager: SupabaseLogManager
+
+  public init() {
+    logManager = SupabaseLogManager()
   }
 
   public func log(
@@ -23,5 +30,24 @@ public struct SupabaseLogHandler: LogHandler {
     parameters["line"] = .stringConvertible(line)
     parameters["source"] = .string(source)
     parameters["function"] = .string(function)
+
+    var payload: [String: Any] = [:]
+    payload["level"] = level.rawValue
+    payload["message"] = metadata?.description
+    payload["metadata"] = parameters.mapValues(\.description)
+
+    logManager.log(payload)
+  }
+}
+
+final class SupabaseLogManager {
+
+  let queue = DispatchQueue(label: "co.binaryscraping.supabase-log-manager", qos: .background)
+  var payloads: [[String: Any]] = []
+
+  func log(_ payload: [String: Any]) {
+    queue.async {
+      self.payloads.append(payload)
+    }
   }
 }
