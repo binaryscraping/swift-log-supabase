@@ -4,23 +4,23 @@
 import PackageDescription
 
 let package = Package(
-    name: "swift-log-supabase",
-    products: [
-        .library(
-            name: "SupabaseLogger",
-            targets: ["SupabaseLogger"]),
-    ],
-    dependencies: [
-        .package(url: "https://github.com/apple/swift-log", from: "1.4.2"),
-    ],
-    targets: [
-        .target(
-            name: "SupabaseLogger",
-            dependencies: [
-                .product(name: "Logging", package: "swift-log"),
-            ]),
-        .testTarget(
-            name: "SupabaseLoggerTests",
-            dependencies: ["SupabaseLogger"]),
-    ]
+  name: "swift-log-supabase",
+  products: [
+    .library(
+      name: "SupabaseLogger",
+      targets: ["SupabaseLogger"])
+  ],
+  dependencies: [
+    .package(url: "https://github.com/apple/swift-log", from: "1.4.2")
+  ],
+  targets: [
+    .target(
+      name: "SupabaseLogger",
+      dependencies: [
+        .product(name: "Logging", package: "swift-log")
+      ]),
+    .testTarget(
+      name: "SupabaseLoggerTests",
+      dependencies: ["SupabaseLogger"]),
+  ]
 )
