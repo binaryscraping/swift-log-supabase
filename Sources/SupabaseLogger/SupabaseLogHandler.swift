@@ -1,6 +1,12 @@
 import Foundation
 import Logging
 
+#if os(iOS)
+  import UIKit
+#elseif os(macOS)
+  import AppKit
+#endif
+
 public struct SupabaseLogConfig {
   let supabaseURL: String
   let supabaseAnonKey: String
@@ -59,23 +65,40 @@ public struct SupabaseLogHandler: LogHandler {
 
 final class SupabaseLogManager {
 
-  let queue = DispatchQueue(label: "co.binaryscraping.supabase-log-manager", qos: .background)
-  var payloads: [[String: Any]] = []
+  let cache: LogsCache
   let config: SupabaseLogConfig
 
   init(config: SupabaseLogConfig) {
     self.config = config
+    self.cache = LogsCache.shared
+
+    #if os(macOS)
+      NotificationCenter.default.addObserver(
+        self, selector: #selector(appWillTerminate), name: NSApplication.willTerminateNotification,
+        object: nil)
+    #elseif os(iOS)
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        // We need to use a delay with these type of notifications because they fire on app load which causes a double load of the cache from disk
+        NotificationCenter.default.addObserver(
+          self, selector: #selector(self.didEnterForeground),
+          name: UIApplication.willEnterForegroundNotification, object: nil)
+        NotificationCenter.default.addObserver(
+          self, selector: #selector(self.didEnterBackground),
+          name: UIApplication.didEnterBackgroundNotification, object: nil)
+      }
+    #endif
   }
 
   func log(_ payload: [String: Any]) {
-    queue.async {
-      self.payloads.append(payload)
-    }
+    Task { await cache.push(payload) }
   }
 
-  func uploadLogs() {
-    queue.async {
-      let data = try! JSONSerialization.data(withJSONObject: self.payloads)
+  private func checkForLogsAndSend() {
+    Task {
+      let logs = await cache.pop()
+      if logs.isEmpty { return }
+
+      let data = try! JSONSerialization.data(withJSONObject: logs)
       guard
         let url = URL(string: self.config.supabaseURL)?.appendingPathComponent(self.config.table)
       else {
@@ -86,14 +109,35 @@ final class SupabaseLogManager {
       request.httpMethod = "POST"
       request.httpBody = data
 
-      URLSession.shared.dataTask(with: request) { data, response, error in
-        if let error = error {
-          print(error)
-          return
-        }
+      do {
+        let (_, response) = try await URLSession.shared.data(for: request)
+        if let httpResponse = response as? HTTPURLResponse {
+          if 200..<300 ~= httpResponse.statusCode {
+            return
+          }
 
-        self.payloads = []
-      }.resume()
+          await cache.push(logs)
+        }
+      } catch {
+        await cache.push(logs)
+      }
     }
   }
+}
+
+extension SupabaseLogManager {
+  @objc func appWillTerminate() {
+    Task { await cache.backupCache() }
+  }
+
+  #if os(iOS)
+    @objc func didEnterForeground() {
+    }
+
+    @objc func didEnterBackground() {
+      Task {
+        await cache.backupCache()
+      }
+    }
+  #endif
 }
