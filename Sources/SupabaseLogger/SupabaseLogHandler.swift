@@ -12,15 +12,22 @@ public struct SupabaseLogConfig: Hashable {
   let supabaseAnonKey: String
 
   let table: String
+  let isDebug: Bool
 
   public init(
     supabaseURL: String,
     supabaseAnonKey: String,
-    table: String = "logs"
+    table: String = "logs",
+    isDebug: Bool = true
   ) {
     self.supabaseURL = supabaseURL
     self.supabaseAnonKey = supabaseAnonKey
     self.table = table
+    #if DEBUG
+      self.isDebug = isDebug
+    #else
+      self.isDebug = false
+    #endif
   }
 }
 
@@ -68,6 +75,9 @@ final class SupabaseLogManager {
   let cache: LogsCache
   let config: SupabaseLogConfig
 
+  private let minimumWaitTimeBetweenRequests: TimeInterval = 10
+  private var sendTimer: Timer?
+
   private static let queue = DispatchQueue(
     label: "co.binaryscraping.supabase-log-manager.instances")
   private static var instances: [SupabaseLogConfig: SupabaseLogManager] = [:]
@@ -103,15 +113,29 @@ final class SupabaseLogManager {
           name: UIApplication.didEnterBackgroundNotification, object: nil)
       }
     #endif
+
+    startTimer()
+  }
+
+  private func startTimer() {
+    sendTimer?.invalidate()
+    sendTimer = Timer.scheduledTimer(
+      timeInterval: minimumWaitTimeBetweenRequests, target: self,
+      selector: #selector(checkForLogsAndSend), userInfo: nil, repeats: true)
+
+    // Fire the timer to attempt to send any cached logs from a previous session.
+    checkForLogsAndSend()
   }
 
   func log(_ payload: [String: Any]) {
     cache.push(payload)
   }
 
+  @objc
   private func checkForLogsAndSend() {
     let logs = cache.pop()
-    if logs.isEmpty { return }
+
+    guard !logs.isEmpty else { return }
 
     let data = try! JSONSerialization.data(withJSONObject: logs)
     guard
@@ -142,7 +166,11 @@ final class SupabaseLogManager {
           throw URLError(.badServerResponse)
         }
       } catch {
-        print(error)
+        if self.config.isDebug {
+          print(error)
+        }
+
+        // An error ocurred, put logs back in cache.
         self.cache.push(logs)
       }
     }
@@ -152,14 +180,30 @@ final class SupabaseLogManager {
 
 extension SupabaseLogManager {
   @objc func appWillTerminate() {
+    if config.isDebug {
+      print(#function)
+    }
+
     cache.backupCache()
   }
 
   #if os(iOS)
     @objc func didEnterForeground() {
+      if config.isDebug {
+        print(#function)
+      }
+
+      startTimer()
     }
 
     @objc func didEnterBackground() {
+      if config.isDebug {
+        print(#function)
+      }
+
+      sendTimer?.invalidate()
+      sendTimer = nil
+
       cache.backupCache()
     }
   #endif
