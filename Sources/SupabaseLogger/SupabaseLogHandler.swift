@@ -122,9 +122,14 @@ final class SupabaseLogManager {
 
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
+    request.addValue("application/json", forHTTPHeaderField: "Content-Type")
     request.httpBody = data
 
-    URLSession.shared.dataTask(with: request) { _, response, error in
+    let config = URLSessionConfiguration.default
+    config.waitsForConnectivity = true
+    let session = URLSession(configuration: config)
+
+    session.dataTask(with: request) { _, response, error in
       do {
         if let error = error {
           throw error

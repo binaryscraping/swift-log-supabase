@@ -5,6 +5,7 @@ import PackageDescription
 
 let package = Package(
   name: "swift-log-supabase",
+  platforms: [.iOS(.v11), .macOS(.v10_13)],
   products: [
     .library(
       name: "SupabaseLogger",
