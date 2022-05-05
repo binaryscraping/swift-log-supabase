@@ -7,7 +7,7 @@ import Logging
   import AppKit
 #endif
 
-public struct SupabaseLogConfig {
+public struct SupabaseLogConfig: Hashable {
   let supabaseURL: String
   let supabaseAnonKey: String
 
@@ -38,7 +38,7 @@ public struct SupabaseLogHandler: LogHandler {
   private let logManager: SupabaseLogManager
 
   public init(config: SupabaseLogConfig) {
-    logManager = SupabaseLogManager(config: config)
+    logManager = SupabaseLogManager.shared(config)
   }
 
   public func log(
@@ -68,9 +68,25 @@ final class SupabaseLogManager {
   let cache: LogsCache
   let config: SupabaseLogConfig
 
-  init(config: SupabaseLogConfig) {
+  private static let queue = DispatchQueue(
+    label: "co.binaryscraping.supabase-log-manager.instances")
+  private static var instances: [SupabaseLogConfig: SupabaseLogManager] = [:]
+
+  static func shared(_ config: SupabaseLogConfig) -> SupabaseLogManager {
+    queue.sync {
+      if let manager = instances[config] {
+        return manager
+      }
+
+      let manager = SupabaseLogManager(config: config)
+      instances[config] = manager
+      return manager
+    }
+  }
+
+  private init(config: SupabaseLogConfig) {
     self.config = config
-    self.cache = LogsCache.shared
+    self.cache = LogsCache()
 
     #if os(macOS)
       NotificationCenter.default.addObserver(
@@ -90,44 +106,48 @@ final class SupabaseLogManager {
   }
 
   func log(_ payload: [String: Any]) {
-    Task { await cache.push(payload) }
+    cache.push(payload)
   }
 
   private func checkForLogsAndSend() {
-    Task {
-      let logs = await cache.pop()
-      if logs.isEmpty { return }
+    let logs = cache.pop()
+    if logs.isEmpty { return }
 
-      let data = try! JSONSerialization.data(withJSONObject: logs)
-      guard
-        let url = URL(string: self.config.supabaseURL)?.appendingPathComponent(self.config.table)
-      else {
-        return
-      }
+    let data = try! JSONSerialization.data(withJSONObject: logs)
+    guard
+      let url = URL(string: self.config.supabaseURL)?.appendingPathComponent(self.config.table)
+    else {
+      return
+    }
 
-      var request = URLRequest(url: url)
-      request.httpMethod = "POST"
-      request.httpBody = data
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.httpBody = data
 
+    URLSession.shared.dataTask(with: request) { _, response, error in
       do {
-        let (_, response) = try await URLSession.shared.data(for: request)
-        if let httpResponse = response as? HTTPURLResponse {
-          if 200..<300 ~= httpResponse.statusCode {
-            return
-          }
+        if let error = error {
+          throw error
+        }
 
-          await cache.push(logs)
+        guard
+          let httpResponse = response as? HTTPURLResponse,
+          200..<300 ~= httpResponse.statusCode
+        else {
+          throw URLError(.badServerResponse)
         }
       } catch {
-        await cache.push(logs)
+        print(error)
+        self.cache.push(logs)
       }
     }
+    .resume()
   }
 }
 
 extension SupabaseLogManager {
   @objc func appWillTerminate() {
-    Task { await cache.backupCache() }
+    cache.backupCache()
   }
 
   #if os(iOS)
@@ -135,9 +155,7 @@ extension SupabaseLogManager {
     }
 
     @objc func didEnterBackground() {
-      Task {
-        await cache.backupCache()
-      }
+      cache.backupCache()
     }
   #endif
 }

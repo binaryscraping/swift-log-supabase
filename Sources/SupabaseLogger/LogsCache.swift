@@ -1,33 +1,40 @@
 import Foundation
 
-actor LogsCache {
+final class LogsCache {
 
   private let maximumNumberOfLogsToPopAtOnce = 100
 
+  private let queue = DispatchQueue(
+    label: "co.binaryscraping.supabase-log-cache", attributes: .concurrent)
   private var cachedLogs: [[String: Any]] = []
 
   func push(_ log: [String: Any]) {
-    cachedLogs.append(log)
+    queue.sync { self.cachedLogs.append(log) }
   }
 
   func push(_ logs: [[String: Any]]) {
-    cachedLogs.append(contentsOf: logs)
+    queue.sync { self.cachedLogs.append(contentsOf: logs) }
   }
 
   func pop() -> [[String: Any]] {
-    let sliceSize = min(maximumNumberOfLogsToPopAtOnce, cachedLogs.count)
-    let poppedLogs = Array(cachedLogs[..<sliceSize])
-    cachedLogs.removeFirst(sliceSize)
+    var poppedLogs: [[String: Any]] = []
+    queue.sync(flags: .barrier) {
+      let sliceSize = min(maximumNumberOfLogsToPopAtOnce, cachedLogs.count)
+      poppedLogs = Array(cachedLogs[..<sliceSize])
+      cachedLogs.removeFirst(sliceSize)
+    }
     return poppedLogs
   }
 
   func backupCache() {
-    do {
-      let data = try JSONSerialization.data(withJSONObject: cachedLogs)
-      try data.write(to: LogsCache.fileURL())
-      self.cachedLogs = []
-    } catch {
-      print("Error saving Logs cache.")
+    queue.sync(flags: .barrier) {
+      do {
+        let data = try JSONSerialization.data(withJSONObject: cachedLogs)
+        try data.write(to: LogsCache.fileURL())
+        self.cachedLogs = []
+      } catch {
+        print("Error saving Logs cache.")
+      }
     }
   }
 
@@ -38,9 +45,7 @@ actor LogsCache {
     .appendingPathComponent("supabase-log-cache")
   }
 
-  static let shared = LogsCache()
-
-  private init() {
+  init() {
     do {
       let data = try Data(contentsOf: LogsCache.fileURL())
       try FileManager.default.removeItem(at: LogsCache.fileURL())
