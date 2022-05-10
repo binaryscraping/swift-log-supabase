@@ -10,13 +10,13 @@ Add `swift-log-supabase` as a dependency to your project using SPM.
 .package(url: "https://github.com/binaryscraping/swift-log-supabase", from: "0.1.0"),
 ```
 
-And in your application/target, add `"SupabaseLogger"` to your `"dependencies"`.
+And in your application/target, add `"SupabaseLogging"` to your `"dependencies"`.
 
 ```swift
 .target(
   name: "YourTarget",
   dependencies: [
-    .product(name: "SupabaseLogger", package: "swift-log-supabase"),
+    .product(name: "SupabaseLogging", package: "swift-log-supabase"),
   ]
 )
 ```
