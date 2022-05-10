@@ -8,21 +8,21 @@ let package = Package(
   platforms: [.iOS(.v11), .macOS(.v10_13)],
   products: [
     .library(
-      name: "SupabaseLogger",
-      targets: ["SupabaseLogger"])
+      name: "SupabaseLogging",
+      targets: ["SupabaseLogging"])
   ],
   dependencies: [
     .package(url: "https://github.com/apple/swift-log", from: "1.4.2")
   ],
   targets: [
     .target(
-      name: "SupabaseLogger",
+      name: "SupabaseLogging",
       dependencies: [
         .product(name: "Logging", package: "swift-log")
       ]),
     .testTarget(
-      name: "SupabaseLoggerTests",
-      dependencies: ["SupabaseLogger"],
+      name: "SupabaseLoggingTests",
+      dependencies: ["SupabaseLogging"],
       exclude: ["_Secrets.swift"]),
   ]
 )

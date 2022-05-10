@@ -1,7 +1,7 @@
 import Logging
 import XCTest
 
-@testable import SupabaseLogger
+@testable import SupabaseLogging
 
 final class SupabaseLogHandlerTests: XCTestCase {
   func testLive() throws {
