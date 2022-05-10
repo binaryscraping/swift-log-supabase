@@ -32,9 +32,7 @@ public struct SupabaseLogConfig: Hashable {
 }
 
 public struct SupabaseLogHandler: LogHandler {
-
   public var metadata: Logger.Metadata = [:]
-
   public var logLevel: Logger.Level = .debug
 
   public subscript(metadataKey key: String) -> Logger.Metadata.Value? {
@@ -42,9 +40,11 @@ public struct SupabaseLogHandler: LogHandler {
     set { metadata[key] = newValue }
   }
 
+  private let label: String
   private let logManager: SupabaseLogManager
 
-  public init(config: SupabaseLogConfig) {
+  public init(label: String, config: SupabaseLogConfig) {
+    self.label = label
     logManager = SupabaseLogManager.shared(config)
   }
 
@@ -52,27 +52,18 @@ public struct SupabaseLogHandler: LogHandler {
     level: Logger.Level, message: Logger.Message, metadata: Logger.Metadata?, source: String,
     file: String, function: String, line: UInt
   ) {
-    var parameters = self.metadata
-    if let metadata = metadata {
-      parameters.merge(metadata) { _, new in new }
-    }
-    parameters["file"] = .string(file)
-    parameters["line"] = .stringConvertible(line)
-    parameters["source"] = .string(source)
-    parameters["function"] = .string(function)
+    let entry = LogEntry(
+      label: label, file: file, line: "\(line)", source: source, function: function,
+      level: level.rawValue, message: message.description, loggedAt: Date(),
+      metadata: self.metadata.merging(metadata ?? [:]) { $1 })
 
-    var payload: [String: Any] = [:]
-    payload["level"] = level.rawValue
-    payload["message"] = metadata?.description
-    payload["metadata"] = parameters.mapValues(\.description)
-
-    logManager.log(payload)
+    logManager.log(entry)
   }
 }
 
 final class SupabaseLogManager {
 
-  let cache: LogsCache
+  let cache: LogsCache<LogEntry>
   let config: SupabaseLogConfig
 
   private let minimumWaitTimeBetweenRequests: TimeInterval = 10
@@ -96,7 +87,7 @@ final class SupabaseLogManager {
 
   private init(config: SupabaseLogConfig) {
     self.config = config
-    self.cache = LogsCache()
+    self.cache = LogsCache(isDebug: config.isDebug)
 
     #if os(macOS)
       NotificationCenter.default.addObserver(
@@ -127,7 +118,7 @@ final class SupabaseLogManager {
     checkForLogsAndSend()
   }
 
-  func log(_ payload: [String: Any]) {
+  func log(_ payload: LogEntry) {
     cache.push(payload)
   }
 
@@ -137,7 +128,7 @@ final class SupabaseLogManager {
 
     guard !logs.isEmpty else { return }
 
-    let data = try! JSONSerialization.data(withJSONObject: logs)
+    let data = try! encoder.encode(logs)
     guard
       let url = URL(string: self.config.supabaseURL)?.appendingPathComponent(self.config.table)
     else {
@@ -147,6 +138,8 @@ final class SupabaseLogManager {
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue(config.supabaseAnonKey, forHTTPHeaderField: "apikey")
+    request.setValue("Bearer \(config.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
     request.httpBody = data
 
     let config = URLSessionConfiguration.default

@@ -22,6 +22,7 @@ let package = Package(
       ]),
     .testTarget(
       name: "SupabaseLoggerTests",
-      dependencies: ["SupabaseLogger"]),
+      dependencies: ["SupabaseLogger"],
+      exclude: ["_Secrets.swift"]),
   ]
 )
