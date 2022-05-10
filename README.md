@@ -25,11 +25,11 @@ And in your application/target, add `"SupabaseLogging"` to your `"dependencies"`
 
 Start by creating the logs table on Supabase dashboard by running the [supabase-init.sql](/supabase-init.sql) script on Supabase SQL Editor.
 
-During app startup/initialization.
-
 ```swift
 import Logging
 import SupabaseLogging
+
+// During app startup/initialization.
 
 LoggingSystem.bootstrap { label in 
   SupabaseLogHandler(
@@ -42,6 +42,8 @@ LoggingSystem.bootstrap { label in
     )
   )
 }
+
+// Then just log it.
 
 let logger = Logger(label: "co.binaryscraping.swift-log-supabase")
 logger.info("Supabase is super cool")
